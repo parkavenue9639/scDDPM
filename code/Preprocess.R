@@ -7,10 +7,27 @@ rm(list = ls())
 # BiocManager::install("Seurat")
 # install.packages("Matrix")
 
+# ================== Configuration ==================
+# 设置要处理的数据集名称
+dataset_name <- "AD01103"  # 可以修改为: AD00202, AD00203, AD00204, AD00401, AD01103
+
+# 设置输入和输出路径
+input_dir <- paste0("data/", dataset_name, "/")
+output_dir <- "FD1000/"
+
+# 创建输出目录
+if (!dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE)
+}
 
 # ================== Load Data ==================
 # Load gene expression matrix (rows: genes, columns: cells)
-data <- read.delim("./AD01103_expr.txt", header = TRUE, row.names = 1)
+expr_file <- paste0(input_dir, dataset_name, "_expr.txt")
+if (!file.exists(expr_file)) {
+    stop(paste("❌ 文件不存在:", expr_file, "\n请先运行解压脚本或检查文件路径"))
+}
+
+data <- read.delim(expr_file, header = TRUE, row.names = 1)
 
 # Calculate non-zero rate
 completed_nz <- sum(data > 0) / (nrow(data) * ncol(data))
@@ -44,24 +61,34 @@ normalized_df <- as.data.frame(norm)
 rownames(normalized_df) <- gene_names
 colnames(normalized_df) <- cell_names
 
-# ================== Select Top Highly Variable Genes ==================
-# Select top 100 variable genes (vst method)
-data1000 <- FindVariableFeatures(data, selection.method = "vst", nfeatures = 100)
-top <- head(VariableFeatures(data1000), 100)
-pb <- normalized_df[top, ]
-pb <- t(pb)
-cat("✅ Selected top variable genes:", dim(pb), "\n")
+# ================== Select Top 1000 Highly Variable Genes ==================
+# Select top 1000 variable genes (vst method)
+data1000 <- FindVariableFeatures(data, selection.method = "vst", nfeatures = 1000)
+top1000 <- head(VariableFeatures(data1000), 1000)
+pb1000 <- normalized_df[top1000, ]
+pb1000 <- t(pb1000)
+cat("✅ Selected top 1000 variable genes:", dim(pb1000), "\n")
 
 # Save processed matrix (expression only)
-write.csv(pb, "../FD100/AD01103PrePro100.csv")
+output_file_1000 <- paste0(output_dir, dataset_name, "PrePro1000.csv")
+write.csv(pb1000, output_file_1000)
+cat("✅ 预处理数据已保存到:", output_file_1000, "\n")
 
 # ================== Merge with Cell Labels ==================
-label <- read.delim("AD01103_cell_label.txt", header = TRUE, row.names = 1)
-merged_data <- merge(pb, label, by = "row.names", all.x = TRUE)
+label_file <- paste0(input_dir, dataset_name, "_cell_label.txt")
+if (!file.exists(label_file)) {
+    stop(paste("❌ 标签文件不存在:", label_file))
+}
+
+label <- read.delim(label_file, header = TRUE, row.names = 1)
+merged_data_1000 <- merge(pb1000, label, by = "row.names", all.x = TRUE)
 
 cat("🔖 Label distribution:\n")
 print(table(label))
 
 # Save final labeled matrix
-write.csv(merged_data, "../FD100/AD01103PreProLabel100.csv", row.names = FALSE)
-cat("✅ Processing complete. Labeled data saved.\n")
+output_file_labeled_1000 <- paste0(output_dir, dataset_name, "PreProLabel1000.csv")
+write.csv(merged_data_1000, output_file_labeled_1000, row.names = FALSE)
+cat("✅ 标记数据已保存到:", output_file_labeled_1000, "\n")
+
+cat("✅ 处理完成。数据集:", dataset_name, "\n")

@@ -17,83 +17,103 @@ library(umap)
 
 # Set working directory and clean environment
 rm(list = ls())
-setwd("F:/Graduate_Projects/DDPM/data/ALZHEIMER/AD00202")
+cat("当前工作目录:", getwd(), "\n")
+
+# ====================== 检查文件是否存在 ======================
+# 检查真实数据文件
+real_data_file <- "FD1000/AD01103PreProLabel1000.csv"
+if (!file.exists(real_data_file)) {
+    cat("❌ 真实数据文件不存在:", real_data_file, "\n")
+    cat("请先运行 Preprocess.R 生成预处理数据\n")
+    stop("文件不存在")
+}
+
+# 检查生成数据文件
+gen_data_file <- "output/AD01103_generated.csv"
+if (!file.exists(gen_data_file)) {
+    cat("❌ 生成数据文件不存在:", gen_data_file, "\n")
+    cat("请先运行 scDDPM.py 生成数据\n")
+    stop("文件不存在")
+}
 
 # Load real and generated data
-org_counts <- read.csv("./preprocessed/FD1000/AD00203NormalLabel.csv", row.names = 1)
-org_label  <- read.csv("./preprocessed/FD1000/label.csv", row.names = 1, header = TRUE)
-gen_counts <- read.csv("./scaled/Final2.0w(2000).csv", row.names = 1, header = TRUE)
-gen_label  <- read.csv("./scaled/label.csv", row.names = 1, header = TRUE)
+org_counts <- read.csv(real_data_file, row.names = 1)
+gen_counts <- read.csv(gen_data_file, row.names = 1, header = TRUE)
+
+# 创建标签数据
+org_label <- data.frame(
+    cell_type = org_counts$label,
+    row.names = rownames(org_counts)
+)
+
+gen_label <- data.frame(
+    cell_type = gen_counts$label,
+    row.names = rownames(gen_counts)
+)
 
 # Convert labels to integers
-org_label[, ncol(org_label)] <- as.integer(org_label[, ncol(org_label)]) - 1
-gen_label[, ncol(gen_label)] <- as.integer(gen_counts[, ncol(gen_counts)]) + 5
+org_label$cell_type <- as.integer(org_label$cell_type) - 1
+gen_label$cell_type <- as.integer(gen_label$cell_type) + 5
 
 # Standardize column names and merge data
-colnames(gen_counts) <- colnames(org_counts)
-all_counts <- rbind(org_counts[, 1:ncol(org_counts)], gen_counts[, 1:ncol(gen_counts)])
-all_counts <- all_counts[, -ncol(all_counts)]
+# 移除标签列，只保留表达数据
+org_expr <- org_counts[, !colnames(org_counts) %in% c("label", "Cell")]
+gen_expr <- gen_counts[, !colnames(gen_counts) %in% c("label", "Cell")]
+
+# 确保列名一致
+common_genes <- intersect(colnames(org_expr), colnames(gen_expr))
+org_expr <- org_expr[, common_genes]
+gen_expr <- gen_expr[, common_genes]
+
+all_counts <- rbind(org_expr, gen_expr)
 annotation <- rbind(org_label, gen_label)
 
+cat("✅ 数据加载完成\n")
+cat("  真实数据维度:", dim(org_expr), "\n")
+cat("  生成数据维度:", dim(gen_expr), "\n")
+cat("  合并数据维度:", dim(all_counts), "\n")
+
 # -------- PCA visualization on real data --------
-counts <- t(org_counts[, 1:1000])
+cat("📊 生成真实数据PCA图...\n")
+counts <- t(org_expr[, 1:min(1000, ncol(org_expr))])
 sce <- SingleCellExperiment(assays = list(counts = as.matrix(counts), logcounts = as.matrix(counts)))
 rowData(sce)$feature_symbol <- rownames(sce)
 sce <- sce[!duplicated(rowData(sce)$feature_symbol), ]
 PCAsce <- runPCA(sce)
+
+# 保存PCA图
+pdf("output/real_data_pca.pdf")
 plot(PCAsce@int_colData@listData$reducedDims@listData$PCA[, 1:2],
-     col = org_label[, 1] + 2, asp = 0.4, pch = 19, cex = 1.8, axes = FALSE)
+     col = org_label$cell_type[1:ncol(counts)] + 2, asp = 0.4, pch = 19, cex = 1.8, 
+     main = "PCA - Real Data", xlab = "PC1", ylab = "PC2")
+dev.off()
 
 # -------- PCA visualization on generated data --------
-counts <- t(gen_counts[, 1:1000])
+cat("📊 生成合成数据PCA图...\n")
+counts <- t(gen_expr[, 1:min(1000, ncol(gen_expr))])
 sce <- SingleCellExperiment(assays = list(counts = as.matrix(counts), logcounts = as.matrix(counts)))
 rowData(sce)$feature_symbol <- rownames(sce)
 sce <- sce[!duplicated(rowData(sce)$feature_symbol), ]
 PCAsce <- runPCA(sce)
+
+pdf("output/generated_data_pca.pdf")
 plot(PCAsce@int_colData@listData$reducedDims@listData$PCA[, 1:2],
-     col = gen_label[, 1] + 1, asp = 0.4, pch = 19, cex = 1.0, axes = FALSE)
+     col = gen_label$cell_type[1:ncol(counts)] + 1, asp = 0.4, pch = 19, cex = 1.0,
+     main = "PCA - Generated Data", xlab = "PC1", ylab = "PC2")
+dev.off()
 
 # -------- PCA on combined real and generated data --------
-counts <- t(all_counts)
+cat("📊 生成合并数据PCA图...\n")
+counts <- t(all_counts[, 1:min(1000, ncol(all_counts))])
 sce <- SingleCellExperiment(assays = list(counts = as.matrix(counts), logcounts = as.matrix(counts)))
 rowData(sce)$feature_symbol <- rownames(sce)
 sce <- sce[!duplicated(rowData(sce)$feature_symbol), ]
 PCAsce <- runPCA(sce)
 
-# Example: visualize selected cell types (class 1~6)
-colors <- c("red", "#777777")
-annotation[, 1] <- 2
-annotation[1:96, 1] <- 1
-annotation[1123:3122, 1] <- 1
+pdf("output/combined_data_pca.pdf")
 plot(PCAsce@int_colData@listData$reducedDims@listData$PCA[, 1:2],
-     col = colors[annotation[, 1]], asp = 0.4, pch = 19, cex = 1.8, axes = FALSE)
+     col = annotation$cell_type[1:ncol(counts)], asp = 0.4, pch = 19, cex = 1.8,
+     main = "PCA - Combined Data", xlab = "PC1", ylab = "PC2")
+dev.off()
 
-# -------- t-SNE on real data --------
-counts <- org_counts[, -ncol(org_counts)]
-label <- org_counts[, ncol(org_counts)]
-counts <- counts[!duplicated(counts), ]
-tsne_matrix <- Rtsne(as.matrix(counts))
-plot(tsne_matrix$Y[, 1:2], col = label, asp = 0.4, pch = 19, cex = 0.5)
-
-# -------- t-SNE on generated data --------
-counts <- gen_counts[, -ncol(gen_counts)]
-label <- gen_counts[, ncol(gen_counts)]
-counts <- counts[!duplicated(counts), ]
-tsne_matrix <- Rtsne(as.matrix(counts))
-plot(tsne_matrix$Y[, 1:2], col = label, asp = 0.4, pch = 19, cex = 0.5)
-
-# -------- t-SNE on combined data --------
-all_counts <- rbind(org_counts, gen_counts)
-counts <- all_counts[, -ncol(all_counts)]
-label <- all_counts[, ncol(all_counts)]
-counts <- counts[!duplicated(counts), ]
-tsne_matrix <- Rtsne(as.matrix(counts))
-plot(tsne_matrix$Y[, 1:2], col = label, asp = 0.4, pch = 19, cex = 0.5)
-
-# -------- UMAP (20D) + t-SNE (2D) on real data --------
-counts <- org_counts[, -ncol(org_counts)]
-label <- org_counts[, ncol(org_counts)]
-counts <- counts[!duplicated(counts), ]
-umap1 <- umap(as.matrix(counts), method = "naive", n_components = 20, n_neighbors = 20)
-tsne_matrix <- Rtsne(as.matrix(counts))
-plot(tsne_matrix$Y[, 1:2], col = label, asp = 0.4, pch = 19, cex = 0.5)
+cat("✅ 可视化完成！结果保存在 output/ 目录\n")

@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# R
+.Rhistory
+.RData
+.Ruserdata
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project specific
+FD1000/
+output/
+*.log
+*.tmp
+*.temp
+
+# Data files (large files)
+data/*/AD*_expr.txt
+data/*/AD*_cell_label.txt
+data/GSE119911/GSE119911_series_matrix.txt
+data/10X\ PBMC\ 3k/analysis/
+data/10X\ PBMC\ 3k/filtered_gene_bc_matrices/
+
+# Keep compressed data files
+!data/*/AD*_expr.txt.gz
+!data/*/AD*_cell_label.txt.gz
+!data/GSE119911/GSE119911_series_matrix.txt.gz 

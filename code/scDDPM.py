@@ -37,7 +37,16 @@ class CSVDataBalancer:
 class GeneExpressionDataset(Dataset):
     def __init__(self, dataframe):
         self.features = dataframe.iloc[:, 1:-1].values.astype(np.float32)  # ensure float32 type
-        self.labels = dataframe.iloc[:, -1].values.astype(np.int64) - 1    # label starts from 0
+        
+        # Handle string labels by converting to numeric
+        label_col = dataframe.iloc[:, -1].values
+        if label_col.dtype == 'object':  # string labels
+            unique_labels = np.unique(label_col)
+            label_to_num = {label: i for i, label in enumerate(unique_labels)}
+            self.labels = np.array([label_to_num[label] for label in label_col], dtype=np.int64)
+            print(f"✅ 标签映射: {label_to_num}")
+        else:
+            self.labels = label_col.astype(np.int64) - 1  # label starts from 0
 
     def __len__(self):
         return len(self.features)
@@ -210,10 +219,23 @@ def train_model(model, diffusion, dataloader, device, epochs=100):
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     model.train()
     loss_history = []
+    
+    print(f"🚀 开始训练模型...")
+    print(f"   - 设备: {device}")
+    print(f"   - 总轮次: {epochs}")
+    print(f"   - 批次数量: {len(dataloader)}")
+    print(f"   - 学习率: 1e-4")
+    print("=" * 50)
 
     for epoch in range(epochs):
         total_loss = 0
-        for batch in dataloader:
+        batch_count = 0
+        
+        # 每10个epoch显示一次详细进度
+        if epoch % 10 == 0:
+            print(f"📊 Epoch {epoch + 1}/{epochs} - 开始训练...")
+        
+        for batch_idx, batch in enumerate(dataloader):
             optimizer.zero_grad()
             x = batch["expression"].to(device)
             labels = batch["label"].to(device)
@@ -223,10 +245,27 @@ def train_model(model, diffusion, dataloader, device, epochs=100):
             optimizer.step()
 
             total_loss += loss.item()
+            batch_count += 1
+            
+            # 每50个batch显示一次进度
+            if batch_idx % 50 == 0 and epoch % 10 == 0:
+                current_loss = loss.item()
+                progress = (batch_idx + 1) / len(dataloader) * 100
+                print(f"   Batch {batch_idx + 1}/{len(dataloader)} ({progress:.1f}%) - Loss: {current_loss:.4f}")
 
         avg_loss = total_loss / len(dataloader)
         loss_history.append(avg_loss)
-        print(f"Epoch {epoch + 1}/{epochs} Loss: {avg_loss:.4f}")
+        
+        # 每10个epoch显示一次平均损失
+        if epoch % 10 == 0:
+            print(f"✅ Epoch {epoch + 1}/{epochs} 完成 - 平均损失: {avg_loss:.4f}")
+            print("-" * 30)
+        else:
+            print(f"Epoch {epoch + 1}/{epochs} Loss: {avg_loss:.4f}")
+    
+    print("🎉 训练完成！")
+    print(f"最终损失: {loss_history[-1]:.4f}")
+    print("=" * 50)
 
 
 # --------------------- Post-processing of Generated Data ---------------------
@@ -266,21 +305,60 @@ def post_process(generated, original_df):
 
 # --------------------- Main Function ---------------------
 def main():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    csv_path = "../FD1000/AD00203PreProLabel1000.csv"
-    output_path = "../FD1000/generated.csv"
+    print("🚀 启动 scDDPM 数据生成流程...")
+    print("=" * 60)
+    
+    # 设备检测
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        print(f"🎯 使用 GPU: {torch.cuda.get_device_name()}")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+        print(f"🎯 使用 Apple Silicon GPU (MPS)")
+    else:
+        device = torch.device("cpu")
+        print(f"🎯 使用 CPU")
+    
+    # ================== Configuration ==================
+    # 设置要处理的数据集名称（需要与Preprocess.R中的dataset_name保持一致）
+    dataset_name = "AD01103"  # 可以修改为: AD00202, AD00203, AD00204, AD00401, AD01103
+    
+    # 设置输入和输出路径
+    csv_path = f"FD1000/{dataset_name}PreProLabel1000.csv"
+    output_path = f"output/{dataset_name}_generated.csv"
+    
+    print(f"📁 数据集: {dataset_name}")
+    print(f"📂 输入文件: {csv_path}")
+    print(f"📂 输出文件: {output_path}")
+    print("-" * 60)
+    
+    # 检查输入文件是否存在
+    if not os.path.exists(csv_path):
+        print(f"❌ 输入文件不存在: {csv_path}")
+        print("请先运行 Preprocess.R 生成预处理数据")
+        return
 
     # Balance the dataset
+    print(f"⚖️  数据平衡处理...")
     balancer = CSVDataBalancer(csv_path)
+    print(f"   - 原始数据形状: {balancer.df.shape}")
+    print(f"   - 标签列: {balancer.label_col}")
+    
     balancer.balance_data()
     balanced_dict = balancer.get_balanced_dict()
+    print(f"   - 平衡后类别数: {len(balanced_dict)}")
 
     # Get total number of classes
     all_labels = set(balancer.df[balancer.label_col].unique())
     num_classes = len(all_labels)
+    print(f"   - 总类别数: {num_classes}")
 
     # Count real sample number per class
     real_counts = balancer.df[balancer.label_col].value_counts().to_dict()
+    print(f"   - 各类别样本数:")
+    for label, count in real_counts.items():
+        print(f"     * {label}: {count}")
+    print("-" * 60)
 
     # Remove previous output file
     if os.path.exists(output_path):
@@ -288,41 +366,73 @@ def main():
     original_columns = pd.read_csv(csv_path).columns.tolist()
 
     # Generate per class
+    total_classes = len(balanced_dict)
+    current_class = 0
+    
     for label, df in balanced_dict.items():
+        current_class += 1
         gen_count = real_counts.get(label, 0)
         if gen_count > 7000:
             gen_count = gen_count // 3  # Limit samples for large classes
-        print(f"\nProcessing class {label}... Target: {gen_count} samples")
+        
+        print(f"\n{'='*60}")
+        print(f"🧬 处理细胞类型 {current_class}/{total_classes}: {label}")
+        print(f"   - 目标生成数量: {gen_count} 样本")
+        print(f"   - 原始数据形状: {df.shape}")
+        print(f"   - 设备: {device}")
+        print(f"{'='*60}")
 
         if gen_count > 0:
+            print(f"📊 创建数据集...")
             dataset = GeneExpressionDataset(df)
             dataloader = DataLoader(dataset, batch_size=128, shuffle=True)
+            print(f"   - 数据集大小: {len(dataset)}")
+            print(f"   - 批次数量: {len(dataloader)}")
 
+            print(f"🏗️  初始化模型...")
             model = UNet1D(num_classes=num_classes).to(device)
             diffusion = DiffusionModule(model).to(device)
+            print(f"   - 模型参数数量: {sum(p.numel() for p in model.parameters()):,}")
+            print(f"   - 可训练参数: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
 
             # Train model
+            print(f"🎯 开始训练模型...")
             train_model(model, diffusion, dataloader, device, epochs=100)
 
             # Optional: uncomment to enable generation and saving
             """
+            print(f"🎨 开始生成数据...")
             with torch.no_grad():
                 generated_list = []
-                for _ in range(6):
+                for batch_idx in range(6):
+                    print(f"   - 生成批次 {batch_idx + 1}/6...")
                     labels = torch.full((700,), label - 1, device=device, dtype=torch.long)
                     batch_generated = diffusion.sample(labels, 700, device)
                     generated_list.append(batch_generated)
+                    print(f"     ✅ 批次 {batch_idx + 1} 完成")
+                
+                print(f"🔗 合并生成数据...")
                 generated = torch.cat(generated_list, dim=0)
+                print(f"   - 生成数据形状: {generated.shape}")
 
+                print(f"🔧 后处理数据...")
                 processed = post_process(generated, df)
+                print(f"   - 处理后形状: {processed.shape}")
+
+                print(f"💾 保存数据...")
                 gen_df = pd.DataFrame(processed, columns=original_columns[1:-1])
                 gen_df.insert(0, "Cell", [f"cell_{label}_{i}" for i in range(4200)])
                 gen_df["label"] = label
 
                 gen_df.to_csv(output_path, mode="a", header=not os.path.exists(output_path), index=False)
+                print(f"   ✅ 数据已保存到: {output_path}")
             """
 
-    print("\n✅ Data generation completed. Each class generated up to original count.")
+    print("\n" + "=" * 60)
+    print("🎉 数据生成流程完成！")
+    print("📊 每个类别都已训练完成")
+    print("📁 输出文件位置: output/")
+    print("=" * 60)
 
 
 # --------------------- Entry Point ---------------------
