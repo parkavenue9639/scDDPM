@@ -49,14 +49,15 @@ output/
 *.tmp
 *.temp
 
-# Data files (large files)
+# Data files (large files) - 只保留压缩文件
 data/*/AD*_expr.txt
 data/*/AD*_cell_label.txt
 data/GSE119911/GSE119911_series_matrix.txt
 data/10X\ PBMC\ 3k/analysis/
 data/10X\ PBMC\ 3k/filtered_gene_bc_matrices/
 
-# Keep compressed data files
+# 保留压缩的数据文件（这些文件较小，可以上传）
 !data/*/AD*_expr.txt.gz
 !data/*/AD*_cell_label.txt.gz
-!data/GSE119911/GSE119911_series_matrix.txt.gz 
+!data/GSE119911/GSE119911_series_matrix.txt.gz
+!data/10X\ PBMC\ 3k/*.tar.gz 

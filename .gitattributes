@@ -1,0 +1,24 @@
+# 跟踪压缩的数据文件
+*.gz filter=lfs diff=lfs merge=lfs -text
+*.tar.gz filter=lfs diff=lfs merge=lfs -text
+*.rar filter=lfs diff=lfs merge=lfs -text
+*.zip filter=lfs diff=lfs merge=lfs -text
+
+# 跟踪解压后的数据文件（如果文件较大）
+data/*/AD*_expr.txt filter=lfs diff=lfs merge=lfs -text
+data/*/AD*_cell_label.txt filter=lfs diff=lfs merge=lfs -text
+data/GSE119911/GSE119911_series_matrix.txt filter=lfs diff=lfs merge=lfs -text
+
+# 跟踪其他可能的大文件
+*.csv filter=lfs diff=lfs merge=lfs -text
+*.tsv filter=lfs diff=lfs merge=lfs -text
+*.txt filter=lfs diff=lfs merge=lfs -text
+*.pdf filter=lfs diff=lfs merge=lfs -text
+*.png filter=lfs diff=lfs merge=lfs -text
+*.jpg filter=lfs diff=lfs merge=lfs -text
+*.jpeg filter=lfs diff=lfs merge=lfs -text
+*.tiff filter=lfs diff=lfs merge=lfs -text
+*.h5 filter=lfs diff=lfs merge=lfs -text
+*.hdf5 filter=lfs diff=lfs merge=lfs -text
+*.rds filter=lfs diff=lfs merge=lfs -text
+*.rdata filter=lfs diff=lfs merge=lfs -text 
