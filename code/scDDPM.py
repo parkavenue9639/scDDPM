@@ -279,7 +279,7 @@ def main():
     
     # ================== Configuration ==================
     # 设置要处理的数据集名称（需要与Preprocess.R中的dataset_name保持一致）
-    dataset_name = "AD01103"  # 可以修改为: AD00202, AD00203, AD00204, AD00401, AD01103
+    dataset_name = os.environ.get('DATASET_NAME', 'AD01103')  # 从环境变量读取数据集名称，默认AD01103
     
     # 设置输入和输出路径
     csv_path = f"FD1000/{dataset_name}PreProLabel1000.csv"

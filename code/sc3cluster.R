@@ -14,9 +14,19 @@ library(Rtsne)
 cat("当前工作目录:", getwd(), "\n")
 rm(list = ls())
 
+# 加载目录结构创建函数
+source("code/create_output_structure.R")
+
+# 获取数据集路径信息
+dataset_paths <- get_dataset_paths()
+dataset_name <- dataset_paths$dataset_name
+
+# 创建输出目录结构
+output_paths <- create_output_structure()
+
 # ====================== 检查输入文件 ======================
 # 检查生成的数据文件是否存在
-input_file <- "output/AD01103_generated.csv"
+input_file <- dataset_paths$generated_data_file
 if (!file.exists(input_file)) {
     cat("❌ 生成的数据文件不存在:", input_file, "\n")
     cat("请先运行 scDDPM.py 生成数据\n")
@@ -71,6 +81,6 @@ sce <- sc3(sce, ks = 6, biology = TRUE, gene_filter = FALSE)
 cat("✅ SC3 clustering complete.\n")
 
 # ====================== Save Results ======================
-output_file <- "output/sc3_clustering_labels.csv"
+output_file <- get_output_path("clustering", "sc3_clustering_labels.csv")
 write.csv(colData(sce), output_file)
 cat("✅ SC3 clustering labels saved to '", output_file, "'\n")

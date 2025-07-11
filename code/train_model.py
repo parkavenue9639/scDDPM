@@ -287,7 +287,7 @@ def main():
         print(f"🎯 使用 CPU")
     
     # ================== Configuration ==================
-    dataset_name = "AD01103"  # 可以修改为: AD00202, AD00203, AD00204, AD00401, AD01103
+    dataset_name = os.environ.get('DATASET_NAME', 'AD01103')  # 从环境变量读取数据集名称，默认AD01103
     csv_path = f"FD1000/{dataset_name}PreProLabel1000.csv"
     model_save_dir = "models"
     

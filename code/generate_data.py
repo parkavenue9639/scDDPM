@@ -280,14 +280,20 @@ def main():
         print(f"🎯 使用 CPU")
     
     # ================== Configuration ==================
-    dataset_name = "AD01103"  # 可以修改为: AD00202, AD00203, AD00204, AD00401, AD01103
+    dataset_name = os.environ.get('DATASET_NAME', 'AD01103')  # 从环境变量读取数据集名称，默认AD01103
     csv_path = f"FD1000/{dataset_name}PreProLabel1000.csv"
     model_dir = "models"
-    output_path = f"output/{dataset_name}_generated.csv"
+    
+    # 创建新的目录结构
+    output_base_dir = f"output/{dataset_name}"
+    generated_data_dir = f"{output_base_dir}/generated_data"
+    os.makedirs(generated_data_dir, exist_ok=True)
+    output_path = f"{generated_data_dir}/{dataset_name}_generated.csv"
     
     print(f"📁 数据集: {dataset_name}")
     print(f"📂 输入文件: {csv_path}")
     print(f"📂 模型目录: {model_dir}")
+    print(f"📂 输出目录: {generated_data_dir}")
     print(f"📂 输出文件: {output_path}")
     print("-" * 60)
     
@@ -303,8 +309,7 @@ def main():
         print("请先运行 train_model.py 训练模型")
         return
     
-    # 创建输出目录
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    # 输出目录已在配置部分创建
     
     # 移除之前的输出文件
     if os.path.exists(output_path):

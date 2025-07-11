@@ -6,9 +6,19 @@ library(dplyr)
 library(enrichplot)
 library(VennDiagram)
 
+# 加载目录结构创建函数
+source("code/create_output_structure.R")
+
+# 获取数据集路径信息
+dataset_paths <- get_dataset_paths()
+dataset_name <- dataset_paths$dataset_name
+
+# 创建输出目录结构
+output_paths <- create_output_structure()
+
 # ========== 检查文件是否存在 ==========
-real_data_file <- "FD1000/AD01103PreProLabel1000.csv"
-gen_data_file <- "output/AD01103_generated.csv"
+real_data_file <- dataset_paths$real_data_file
+gen_data_file <- dataset_paths$generated_data_file
 
 if (!file.exists(real_data_file)) {
     cat("❌ 真实数据文件不存在:", real_data_file, "\n")
@@ -101,11 +111,11 @@ if (is.null(kegg_real) || is.null(kegg_gen)) {
 }
 
 # ========== 保存KEGG结果到文件 ==========
-saveRDS(kegg_real, "output/kegg_real_results.rds")
-saveRDS(kegg_gen, "output/kegg_generated_results.rds")
+saveRDS(kegg_real, get_output_path("kegg_analysis", "kegg_real_results.rds"))
+saveRDS(kegg_gen, get_output_path("kegg_analysis", "kegg_generated_results.rds"))
 cat("💾 KEGG分析结果已保存到:\n")
-cat("  - output/kegg_real_results.rds\n")
-cat("  - output/kegg_generated_results.rds\n")
+cat("  -", get_output_path("kegg_analysis", "kegg_real_results.rds"), "\n")
+cat("  -", get_output_path("kegg_analysis", "kegg_generated_results.rds"), "\n")
 
 # ========== Pathway Comparison ==========
 real_terms <- kegg_real@result$Description
@@ -115,10 +125,10 @@ common_terms <- intersect(real_terms, gen_terms)
 only_real    <- setdiff(real_terms, gen_terms)
 only_gen     <- setdiff(gen_terms, real_terms)
 
-write.csv(data.frame(Common = common_terms), "output/common_kegg_pathways.csv", row.names = FALSE)
+write.csv(data.frame(Common = common_terms), get_output_path("kegg_analysis", "common_kegg_pathways.csv"), row.names = FALSE)
 
 # ========== Visualization ==========
-pdf("output/KEGG_comparison_and_venn.pdf", width = 14, height = 8)
+pdf(get_output_path("kegg_analysis", "KEGG_comparison_and_venn.pdf"), width = 14, height = 8)
 
 # Side-by-side dotplots
 par(mfrow = c(1, 2))
@@ -140,4 +150,4 @@ draw.pairwise.venn(
 )
 
 dev.off()
-cat("✅ Analysis complete. Results saved to output/KEGG_comparison_and_venn.pdf and output/common_kegg_pathways.csv\n")
+cat("✅ Analysis complete. Results saved to", output_paths$kegg_analysis, "directory\n")

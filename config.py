@@ -1,9 +1,11 @@
 # ================== scDDPM 配置文件 ==================
 # 统一管理数据集配置，避免在多个文件中重复修改
 
+import os
+
 # 当前要处理的数据集
 # 可选值: "AD00202", "AD00203", "AD00204", "AD00401", "AD01103"
-DATASET_NAME = "AD01103"
+DATASET_NAME = os.environ.get('DATASET_NAME', 'AD01103')  # 从环境变量读取，默认AD01103
 
 # 数据目录配置
 DATA_DIR = "data"
