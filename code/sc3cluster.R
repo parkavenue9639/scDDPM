@@ -47,7 +47,7 @@ if (!file.exists("gen_label2.csv")) {
 }
 
 # Transpose expression matrix (SC3 requires genes as rows, cells as columns)
-counts <- t(counts)
+#counts <- t(counts)
 cat("✅ Transposed matrix dimensions:", dim(counts)[1], "cells ×", dim(counts)[2], "genes\n")
 
 # ====================== Create SingleCellExperiment Object ======================

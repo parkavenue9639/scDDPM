@@ -41,9 +41,17 @@ labels_gen <- as.character(expr_gen$label)
 expr_gen$label <- NULL
 expr_gen <- t(expr_gen)
 
+# 清理可能的引号
+labels_real <- gsub('^"|"$', '', labels_real)
+labels_gen <- gsub('^"|"$', '', labels_gen)
+
+# 显示实际的标签值用于调试
+cat("🔍 真实数据中的唯一标签:", paste(unique(labels_real), collapse = ", "), "\n")
+cat("🔍 生成数据中的唯一标签:", paste(unique(labels_gen), collapse = ", "), "\n")
+
 # Set the label pairs to compare (real vs generated)
-real_label1 <- "1"; real_label2 <- "5"
-gen_label1  <- "1"; gen_label2  <- "5"
+real_label1 <- "Astrocytes"; real_label2 <- "Excitatory neurons"
+gen_label1  <- "Astrocytes"; gen_label2  <- "Excitatory neurons"
 
 # Find column indices for each group
 group1_real <- which(labels_real == real_label1)
@@ -91,6 +99,13 @@ kegg_gen  <- enrichKEGG(gene = gene_gen$ENTREZID, organism = "hsa", pvalueCutoff
 if (is.null(kegg_real) || is.null(kegg_gen)) {
     stop("❌ enrichKEGG returned NULL. Check if valid genes are recognized by KEGG.")
 }
+
+# ========== 保存KEGG结果到文件 ==========
+saveRDS(kegg_real, "output/kegg_real_results.rds")
+saveRDS(kegg_gen, "output/kegg_generated_results.rds")
+cat("💾 KEGG分析结果已保存到:\n")
+cat("  - output/kegg_real_results.rds\n")
+cat("  - output/kegg_generated_results.rds\n")
 
 # ========== Pathway Comparison ==========
 real_terms <- kegg_real@result$Description
