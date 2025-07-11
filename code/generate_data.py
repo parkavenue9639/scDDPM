@@ -203,8 +203,7 @@ def generate_for_all_classes(model_path, csv_path, output_path, device, samples_
     
     # Get label mapping
     balancer = CSVDataBalancer(csv_path)
-    label_groups = {label: balancer.df[balancer.df[balancer.label_col] == label].copy()
-                   for label in balancer.df[balancer.label_col].unique()}
+    label_groups = {label: balancer.df[balancer.df[balancer.label_col] == label].copy() for label in unique_labels}
     
     # Create label to index mapping
     unique_labels = list(label_groups.keys())
