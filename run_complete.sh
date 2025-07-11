@@ -19,6 +19,17 @@ FORCE_PCA_FOR=""
 FORCE_ALL_FOR=""
 SKIP_DATASETS=""
 
+# 日志相关选项
+ENABLE_LOGGING=true
+LOG_DIR="logs"
+LOG_TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+MAIN_LOG_FILE=""
+DISABLE_LOGGING=false
+
+# 时间统计相关
+TIMING_DATA_FILE=""
+CURRENT_DATASET_TIMING=""
+
 for arg in "$@"; do
     case $arg in
         --force|-f)
@@ -68,8 +79,201 @@ for arg in "$@"; do
         --skip-dataset=*)
             SKIP_DATASETS="${SKIP_DATASETS} ${arg#*=}"
             ;;
+        --no-log)
+            DISABLE_LOGGING=true
+            ;;
+        --log-dir=*)
+            LOG_DIR="${arg#*=}"
+            ;;
+        --help|-h)
+            # 这里只设置标志，实际的帮助信息在后面显示
+            ;;
     esac
 done
+
+# ================== 日志系统初始化 ==================
+# 初始化日志系统
+init_logging() {
+    if [ "$DISABLE_LOGGING" = true ]; then
+        echo "📝 日志记录已禁用"
+        return 0
+    fi
+    
+    # 创建日志目录
+    mkdir -p "$LOG_DIR"
+    
+    # 设置主日志文件
+    MAIN_LOG_FILE="$LOG_DIR/scDDPM_run_${LOG_TIMESTAMP}.log"
+    
+    # 清理旧日志文件（保留最近10个）
+    find "$LOG_DIR" -name "scDDPM_run_*.log" -type f | sort -r | tail -n +11 | xargs rm -f 2>/dev/null || true
+    
+    echo "📝 启用日志记录: $MAIN_LOG_FILE"
+    echo "=== scDDPM 处理日志 - $(date) ===" > "$MAIN_LOG_FILE"
+}
+
+# 日志记录函数
+log_output() {
+    if [ "$DISABLE_LOGGING" = false ] && [ -n "$MAIN_LOG_FILE" ]; then
+        tee -a "$MAIN_LOG_FILE"
+    else
+        cat
+    fi
+}
+
+# 数据集专用日志记录函数
+log_dataset_output() {
+    local dataset_name=$1
+    if [ "$DISABLE_LOGGING" = false ] && [ -n "$LOG_DIR" ]; then
+        local dataset_log="$LOG_DIR/dataset_${dataset_name}_${LOG_TIMESTAMP}.log"
+        tee -a "$dataset_log" | log_output
+    else
+        log_output
+    fi
+}
+
+# ================== 时间统计系统 ==================
+# 初始化时间统计
+init_timing_system() {
+    if [ "$DISABLE_LOGGING" = false ] && [ -n "$LOG_DIR" ]; then
+        TIMING_DATA_FILE="$LOG_DIR/timing_data_${LOG_TIMESTAMP}.tmp"
+    else
+        TIMING_DATA_FILE="/tmp/scDDPM_timing_$$"
+    fi
+    > "$TIMING_DATA_FILE"  # 清空文件
+}
+
+# 记录模块开始时间
+start_module_timer() {
+    local dataset=$1
+    local module=$2
+    local start_time=$(date +%s)
+    
+    echo "START|${dataset}|${module}|${start_time}" >> "$TIMING_DATA_FILE"
+    
+    {
+        echo "⏱️  [$(date +"%H:%M:%S")] 开始模块: $module"
+    } | log_dataset_output "$dataset"
+}
+
+# 记录模块结束时间并计算耗时
+end_module_timer() {
+    local dataset=$1
+    local module=$2
+    local end_time=$(date +%s)
+    
+    # 查找对应的开始时间
+    local start_time=$(grep "START|${dataset}|${module}|" "$TIMING_DATA_FILE" | tail -1 | cut -d'|' -f4)
+    
+    if [ -n "$start_time" ]; then
+        local duration=$((end_time - start_time))
+        local hours=$((duration / 3600))
+        local minutes=$(((duration % 3600) / 60))
+        local seconds=$((duration % 60))
+        
+        local time_str=""
+        if [ $hours -gt 0 ]; then
+            time_str="${hours}小时${minutes}分${seconds}秒"
+        elif [ $minutes -gt 0 ]; then
+            time_str="${minutes}分${seconds}秒"
+        else
+            time_str="${seconds}秒"
+        fi
+        
+        # 记录完成时间
+        echo "END|${dataset}|${module}|${end_time}|${time_str}" >> "$TIMING_DATA_FILE"
+        
+        {
+            echo "✅ [$(date +"%H:%M:%S")] 完成模块: $module (耗时: $time_str)"
+        } | log_dataset_output "$dataset"
+    fi
+}
+
+# 输出数据集时间统计报告
+output_timing_report() {
+    local dataset=$1
+    
+    {
+        echo ""
+        echo "📊 数据集 $dataset 各模块耗时统计："
+        echo "----------------------------------------"
+        
+        # 查找该数据集的所有完成记录
+        local has_data=false
+        while IFS='|' read -r type ds module end_time time_str; do
+            if [ "$type" = "END" ] && [ "$ds" = "$dataset" ] && [ "$module" != "数据集处理总时间" ]; then
+                printf "  %-20s %s\n" "$module:" "$time_str"
+                has_data=true
+            fi
+        done < "$TIMING_DATA_FILE"
+        
+        if [ "$has_data" = false ]; then
+            echo "  无时间统计数据"
+        fi
+        echo "----------------------------------------"
+        echo ""
+    } | log_dataset_output "$dataset"
+}
+
+# 输出总体时间统计报告
+output_global_timing_report() {
+    {
+        echo ""
+        echo "📊📊📊 总体各数据集处理时间统计 📊📊📊"
+        echo "=============================================="
+        
+        for dataset in $DATASETS_TO_PROCESS; do
+            # 跳过被跳过的数据集
+            if is_dataset_skipped "$dataset"; then
+                continue
+            fi
+            
+            echo ""
+            echo "📋 数据集: $dataset"
+            echo "--------------------"
+            
+            local has_data=false
+            local total_seconds=0
+            
+            while IFS='|' read -r type ds module end_time time_str; do
+                if [ "$type" = "END" ] && [ "$ds" = "$dataset" ] && [ "$module" != "数据集处理总时间" ]; then
+                    printf "  %-20s %s\n" "$module:" "$time_str"
+                    has_data=true
+                    
+                    # 计算总秒数
+                    local seconds=$(echo "$time_str" | grep -o '[0-9]*秒' | sed 's/秒//')
+                    local minutes=$(echo "$time_str" | grep -o '[0-9]*分' | sed 's/分//')
+                    local hours=$(echo "$time_str" | grep -o '[0-9]*小时' | sed 's/小时//')
+                    
+                    [ -n "$seconds" ] && total_seconds=$((total_seconds + seconds))
+                    [ -n "$minutes" ] && total_seconds=$((total_seconds + minutes * 60))
+                    [ -n "$hours" ] && total_seconds=$((total_seconds + hours * 3600))
+                fi
+            done < "$TIMING_DATA_FILE"
+            
+            if [ "$has_data" = false ]; then
+                echo "  无时间统计数据"
+            else
+                echo "  --------------------"
+                local total_hours=$((total_seconds / 3600))
+                local total_minutes=$(((total_seconds % 3600) / 60))
+                local remaining_seconds=$((total_seconds % 60))
+                
+                if [ $total_hours -gt 0 ]; then
+                    echo "  数据集总耗时: ${total_hours}小时${total_minutes}分${remaining_seconds}秒"
+                elif [ $total_minutes -gt 0 ]; then
+                    echo "  数据集总耗时: ${total_minutes}分${remaining_seconds}秒"
+                else
+                    echo "  数据集总耗时: ${remaining_seconds}秒"
+                fi
+            fi
+        done
+        
+        echo ""
+        echo "=============================================="
+        echo ""
+    } | log_output
+}
 
 # 所有支持的数据集
 ALL_DATASETS="AD00202 AD00203 AD00204 AD00401 AD01103"
@@ -141,6 +345,12 @@ else
     echo "🎯 针对性处理数据集: $DATASETS_TO_PROCESS"
 fi
 
+# 初始化日志系统
+init_logging
+
+# 初始化时间统计系统
+init_timing_system
+
 echo "================= scDDPM 完整自动化脚本 ================="
 echo "当前时间: $(date)"
 echo "工作目录: $(pwd)"
@@ -165,12 +375,18 @@ echo "    --force-kegg-for=DATASET      强制重新运行指定数据集KEGG分
 echo "    --force-pca-for=DATASET       强制重新运行指定数据集PCA评估"
 echo "    --force-all-for=DATASET       强制重新运行指定数据集所有步骤"
 echo ""
+echo "📝 日志记录选项:"
+echo "    --no-log                      禁用日志记录"
+echo "    --log-dir=DIR                 指定日志目录 (默认: logs)"
+echo ""
 echo "💡 使用示例:"
 echo "    $0                             # 处理所有数据集"
 echo "    $0 -d AD00203                  # 只处理AD00203"
 echo "    $0 --skip-dataset=AD00202      # 处理除AD00202外的所有数据集"
 echo "    $0 --force-train-for=AD00203   # 只对AD00203重新训练"
 echo "    $0 --force-kegg-for=AD00204    # 只对AD00204重新运行KEGG"
+echo "    $0 --no-log                    # 禁用日志记录"
+echo "    $0 --log-dir=my_logs           # 使用自定义日志目录"
 echo ""
 echo "📚 支持的数据集: AD00202, AD00203, AD00204, AD00401, AD01103"
 echo "----------------------------------------------------------"
@@ -184,10 +400,15 @@ process_single_dataset() {
     local dataset_force_pca=$5
     local dataset_force_all=$6
     
-    echo ""
-    echo "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥"
-    echo "              开始处理数据集: $current_dataset"
-    echo "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥"
+    # 记录数据集处理开始时间
+    start_module_timer "$current_dataset" "数据集处理总时间"
+    
+    {
+        echo ""
+        echo "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥"
+        echo "              开始处理数据集: $current_dataset"
+        echo "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥"
+        echo "⏰ 开始时间: $(date)"
     
     # 设置当前数据集的环境变量
     export DATASET_NAME=$current_dataset
@@ -217,6 +438,7 @@ process_single_dataset() {
     fi
 
 # ================== 智能数据解压模块 ==================
+start_module_timer "$current_dataset" "数据解压"
 echo "🔍 [1/8] 检查并解压数据..."
 
 # 函数：检查文件是否存在
@@ -337,6 +559,7 @@ if [ -d "data/GSE119911" ]; then
 fi
 
 echo "✅ 数据解压检查完成！"
+end_module_timer "$current_dataset" "数据解压"
 
 # ================== 创建输出目录 ==================
 echo "📁 [2/8] 创建输出目录..."
@@ -352,6 +575,7 @@ echo "🔍 [4/8] 检查路径和文件完整性..."
 python test_paths.py
 
 # ================== 数据预处理 ==================
+start_module_timer "$current_dataset" "数据预处理"
 echo "🧹 [5/8] 检查数据预处理..."
 
 preprocessed_file="FD1000/${current_dataset}PreProLabel1000.csv"
@@ -372,8 +596,10 @@ else
     fi
     echo "✅ 预处理完成，文件已生成: $preprocessed_file"
 fi
+end_module_timer "$current_dataset" "数据预处理"
 
 # ================== 数据训练 ==================
+start_module_timer "$current_dataset" "模型训练"
 echo "🧠 [6/8] 检查模型训练..."
 
 model_dir="models"
@@ -399,8 +625,10 @@ else
     fi
     echo "✅ 模型训练完成，生成 $model_count 个最佳模型文件"
 fi
+end_module_timer "$current_dataset" "模型训练"
 
 # ================== 数据生成 ==================
+start_module_timer "$current_dataset" "数据生成"
 echo "🎨 [7/8] 检查数据生成..."
 
 generated_file="output/${current_dataset}/generated_data/${current_dataset}_generated.csv"
@@ -425,15 +653,17 @@ else
     fi
     echo "✅ 数据生成完成，文件已生成: $generated_file"
 fi
+end_module_timer "$current_dataset" "数据生成"
 
 # ================== 下游分析 ==================
+start_module_timer "$current_dataset" "下游分析"
 echo "📊 [7/9] 检查下游分析..."
 
 # 检查下游分析结果文件（不包括KEGG分析）
 analysis_files=(
-    "output/clustering_results.csv"
-    "output/visualization_plots.pdf"
-    "output/differential_expression.csv"
+    "output/${current_dataset}/clustering/clustering_results.csv"
+    "output/${current_dataset}/visualization/visualization_plots.pdf"
+    "output/${current_dataset}/differential_expression/differential_expression.csv"
 )
 
 # 检查是否所有分析文件都存在
@@ -469,8 +699,10 @@ else
     echo "  - 差异表达分析"
     Rscript code/differential\ gene\ expression.R
 fi
+end_module_timer "$current_dataset" "下游分析"
 
 # ================== KEGG富集分析 ==================
+start_module_timer "$current_dataset" "KEGG富集分析"
 echo "🧬 [8/9] 智能KEGG富集分析..."
 
 # 检查必需的输入文件
@@ -575,8 +807,10 @@ else
     
     echo "✅ KEGG富集分析流程完成"
 fi
+end_module_timer "$current_dataset" "KEGG富集分析"
 
 # ================== PCA质量评估 ==================
+start_module_timer "$current_dataset" "PCA质量评估"
 echo "📊 [9/9] PCA质量评估..."
 
 # 检查必需的输入文件
@@ -666,12 +900,21 @@ else
     
     echo "✅ PCA分析和质量评估流程完成"
 fi
+end_module_timer "$current_dataset" "PCA质量评估"
 
-    echo ""
-    echo "✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅"
-    echo "           数据集 $current_dataset 处理完成！"
-    echo "✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅"
-    echo ""
+# 输出当前数据集的时间统计报告
+output_timing_report "$current_dataset"
+
+# 记录数据集处理结束时间
+end_module_timer "$current_dataset" "数据集处理总时间"
+
+        echo ""
+        echo "✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅"
+        echo "           数据集 $current_dataset 处理完成！"
+        echo "✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅"
+        echo "⏰ 完成时间: $(date)"
+        echo ""
+    } | log_dataset_output "$current_dataset"
 }
 
 # ================== 主执行逻辑 ==================
@@ -681,10 +924,21 @@ TOTAL_DATASETS=0
 SUCCESSFUL_DATASETS=0
 FAILED_DATASETS=""
 
+{
+    echo "🚀 开始批量处理流程 - $(date)"
+    echo "📊 待处理数据集: $DATASETS_TO_PROCESS"
+    if [ -n "$SKIP_DATASETS" ]; then
+        echo "⏭️  跳过数据集:$SKIP_DATASETS"
+    fi
+    echo ""
+} | log_output
+
 for current_dataset in $DATASETS_TO_PROCESS; do
     # 检查是否跳过当前数据集
     if is_dataset_skipped "$current_dataset"; then
-        echo "⏭️  跳过数据集: $current_dataset"
+        {
+            echo "⏭️  跳过数据集: $current_dataset"
+        } | log_output
         continue
     fi
     
@@ -717,36 +971,53 @@ for current_dataset in $DATASETS_TO_PROCESS; do
     # 处理当前数据集
     if process_single_dataset "$current_dataset" "$dataset_force_train" "$dataset_force_generate" "$dataset_force_kegg" "$dataset_force_pca" "$dataset_force_all"; then
         SUCCESSFUL_DATASETS=$((SUCCESSFUL_DATASETS + 1))
+        {
+            echo "✅ 数据集 $current_dataset 处理成功"
+        } | log_output
     else
         FAILED_DATASETS="$FAILED_DATASETS $current_dataset"
+        {
+            echo "❌ 数据集 $current_dataset 处理失败"
+        } | log_output
     fi
 done
 
-echo "----------------------------------------------------------"
-echo "🎉 批量处理流程完成！"
-echo ""
-echo "📊 总体执行统计："
-echo "  - 总处理数据集数: $TOTAL_DATASETS"
-echo "  - 成功处理数据集数: $SUCCESSFUL_DATASETS"
-if [ -n "$FAILED_DATASETS" ]; then
-    echo "  - 失败数据集:$FAILED_DATASETS"
-fi
-echo "  - 数据解压: ✅ 完成"
-echo "  - 路径检测: ✅ 完成"
-echo "  - 各数据集详细处理状态请查看上方日志"
-echo ""
-echo "📁 结果目录结构："
-echo "  - 预处理数据: FD1000/"
-echo "  - 训练模型: models/"
-echo "  - 输出根目录: output/"
-echo "  - 按数据集组织: output/[DATASET_NAME]/"
-echo "    ├── generated_data/           # 生成的单细胞数据"
-echo "    ├── visualization/            # 可视化图表"
-echo "    ├── clustering/               # 聚类分析结果"
-echo "    ├── differential_expression/  # 差异表达分析"
-echo "    ├── kegg_analysis/            # KEGG富集分析"
-echo "    ├── quality_assessment/       # 数据质量评估"
-echo "    └── reports/                  # 分析报告"
-echo ""
-echo "⏰ 当前时间: $(date)"
-echo "==========================================================" 
+{
+    echo "----------------------------------------------------------"
+    echo "🎉 批量处理流程完成！"
+    echo "⏰ 完成时间: $(date)"
+    echo ""
+    echo "📊 总体执行统计："
+    echo "  - 总处理数据集数: $TOTAL_DATASETS"
+    echo "  - 成功处理数据集数: $SUCCESSFUL_DATASETS"
+    if [ -n "$FAILED_DATASETS" ]; then
+        echo "  - 失败数据集:$FAILED_DATASETS"
+    fi
+    echo "  - 数据解压: ✅ 完成"
+    echo "  - 路径检测: ✅ 完成"
+    echo "  - 各数据集详细处理状态请查看上方日志"
+    echo ""
+    echo "📁 结果目录结构："
+    echo "  - 预处理数据: FD1000/"
+    echo "  - 训练模型: models/"
+    echo "  - 输出根目录: output/"
+    echo "  - 按数据集组织: output/[DATASET_NAME]/"
+    echo "    ├── generated_data/           # 生成的单细胞数据"
+    echo "    ├── visualization/            # 可视化图表"
+    echo "    ├── clustering/               # 聚类分析结果"
+    echo "    ├── differential_expression/  # 差异表达分析"
+    echo "    ├── kegg_analysis/            # KEGG富集分析"
+    echo "    ├── quality_assessment/       # 数据质量评估"
+    echo "    └── reports/                  # 分析报告"
+    echo ""
+    if [ "$DISABLE_LOGGING" = false ] && [ -n "$MAIN_LOG_FILE" ]; then
+        echo "📝 详细日志已保存到: $MAIN_LOG_FILE"
+        echo "📝 各数据集日志: $LOG_DIR/dataset_*_${LOG_TIMESTAMP}.log"
+        echo ""
+    fi
+    echo "⏰ 总执行时间: 从 $LOG_TIMESTAMP 到 $(date +"%Y%m%d_%H%M%S")"
+    echo "=========================================================="
+} | log_output
+
+# 输出总体时间统计报告
+output_global_timing_report 
