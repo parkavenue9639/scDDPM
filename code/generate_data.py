@@ -7,6 +7,7 @@ import os
 import time
 import glob
 from train_model import UNet1D, DiffusionModule, CSVDataBalancer
+from tqdm import trange
 
 # --------------------- Post-processing of Generated Data ---------------------
 def post_process(generated, original_df):
@@ -101,8 +102,9 @@ def generate_for_class(model_path, csv_path, output_path, device, samples_per_ba
     
     # Get label mapping
     balancer = CSVDataBalancer(csv_path)
-    label_groups = {label: balancer.df[balancer.df[balancer.label_col] == label].copy()
-                   for label in balancer.df[balancer.df[balancer.label_col].unique()]}
+    unique_labels = np.unique(balancer.df[balancer.label_col])
+    label_to_num = {label: i for i, label in enumerate(unique_labels)}
+    label_groups = {label: balancer.df[balancer.label_col] == label for label in unique_labels}
     
     # Find the label index
     unique_labels = list(label_groups.keys())
@@ -118,7 +120,7 @@ def generate_for_class(model_path, csv_path, output_path, device, samples_per_ba
         generated_list = []
         total_samples = samples_per_batch * num_batches
         
-        for batch_idx in range(num_batches):
+        for batch_idx in trange(num_batches, desc="生成批次", unit="batch"):
             print(f"   - 生成批次 {batch_idx + 1}/{num_batches}...")
             labels = torch.full((samples_per_batch,), label_idx, device=device, dtype=torch.long)
             batch_generated = diffusion.sample(labels, samples_per_batch, device)
