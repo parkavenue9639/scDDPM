@@ -214,58 +214,16 @@ class DiffusionModule(nn.Module):
 
 
 
-# --------------------- Training and Generation Pipeline ---------------------
+# --------------------- Legacy Code - Now Deprecated ---------------------
+# 训练和生成功能已分离到 train_model.py 和 generate_data.py
+# 请使用以下命令：
+# 训练模型: python code/train_model.py
+# 生成数据: python code/generate_data.py
+
 def train_model(model, diffusion, dataloader, device, epochs=100):
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-    model.train()
-    loss_history = []
-    
-    print(f"🚀 开始训练模型...")
-    print(f"   - 设备: {device}")
-    print(f"   - 总轮次: {epochs}")
-    print(f"   - 批次数量: {len(dataloader)}")
-    print(f"   - 学习率: 1e-4")
-    print("=" * 50)
-
-    for epoch in range(epochs):
-        total_loss = 0
-        batch_count = 0
-        
-        # 每10个epoch显示一次详细进度
-        if epoch % 10 == 0:
-            print(f"📊 Epoch {epoch + 1}/{epochs} - 开始训练...")
-        
-        for batch_idx, batch in enumerate(dataloader):
-            optimizer.zero_grad()
-            x = batch["expression"].to(device)
-            labels = batch["label"].to(device)
-
-            loss = diffusion(x, labels)
-            loss.backward()
-            optimizer.step()
-
-            total_loss += loss.item()
-            batch_count += 1
-            
-            # 每50个batch显示一次进度
-            if batch_idx % 50 == 0 and epoch % 10 == 0:
-                current_loss = loss.item()
-                progress = (batch_idx + 1) / len(dataloader) * 100
-                print(f"   Batch {batch_idx + 1}/{len(dataloader)} ({progress:.1f}%) - Loss: {current_loss:.4f}")
-
-        avg_loss = total_loss / len(dataloader)
-        loss_history.append(avg_loss)
-        
-        # 每10个epoch显示一次平均损失
-        if epoch % 10 == 0:
-            print(f"✅ Epoch {epoch + 1}/{epochs} 完成 - 平均损失: {avg_loss:.4f}")
-            print("-" * 30)
-        else:
-            print(f"Epoch {epoch + 1}/{epochs} Loss: {avg_loss:.4f}")
-    
-    print("🎉 训练完成！")
-    print(f"最终损失: {loss_history[-1]:.4f}")
-    print("=" * 50)
+    print("⚠️  此函数已废弃，请使用 code/train_model.py")
+    print("运行命令: python code/train_model.py")
+    return []
 
 
 # --------------------- Post-processing of Generated Data ---------------------

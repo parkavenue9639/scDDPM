@@ -175,10 +175,35 @@ else
     echo "✅ 预处理完成，文件已生成: $preprocessed_file"
 fi
 
-# ================== 数据生成 ==================
-echo "🧠 [6/7] 检查数据生成..."
+# ================== 数据训练 ==================
+echo "🧠 [6/7] 检查模型训练..."
 
-# 检查生成后的文件是否已存在
+model_dir="models"
+model_pattern="${model_dir}/AD01103*_best_*.pth"
+model_count=$(ls $model_pattern 2>/dev/null | wc -l)
+
+if [ $model_count -gt 0 ] && [ "$FORCE_RERUN" = false ]; then
+    echo "✅ 最佳模型文件已存在: $model_count 个"
+    echo "   - 跳过训练步骤"
+else
+    if [ "$FORCE_RERUN" = true ]; then
+        echo "🔄 强制重新运行：开始模型训练..."
+    else
+        echo "🧠 最佳模型文件不存在，开始训练..."
+    fi
+    python code/train_model.py
+    # 检查模型文件
+    model_count=$(ls $model_pattern 2>/dev/null | wc -l)
+    if [ $model_count -eq 0 ]; then
+        echo "❌ 未生成最佳模型文件，流程中止！"
+        exit 1
+    fi
+    echo "✅ 模型训练完成，生成 $model_count 个最佳模型文件"
+fi
+
+# ================== 数据生成 ==================
+echo "🎨 [7/7] 检查数据生成..."
+
 generated_file="output/AD01103_generated.csv"
 if [ -f "$generated_file" ] && [ "$FORCE_RERUN" = false ]; then
     echo "✅ 生成数据已存在: $generated_file"
@@ -188,10 +213,9 @@ else
     if [ "$FORCE_RERUN" = true ]; then
         echo "🔄 强制重新运行：开始数据生成..."
     else
-        echo "🧠 生成数据不存在，开始运行scDDPM生成模型..."
+        echo "🎨 生成数据不存在，开始运行generate_data.py..."
     fi
-    python code/scDDPM.py
-    
+    python code/generate_data.py
     # 检查生成结果
     if [ ! -f "$generated_file" ]; then
         echo "❌ 生成数据文件不存在，流程中止！"
@@ -201,7 +225,7 @@ else
 fi
 
 # ================== 下游分析 ==================
-echo "📊 [7/7] 检查下游分析..."
+echo "📊 [8/8] 检查下游分析..."
 
 # 检查下游分析结果文件
 analysis_files=(
