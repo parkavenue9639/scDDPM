@@ -455,3 +455,51 @@ if (n_total > 0) {
 cat("🎯 动态多细胞类型KEGG分析完成！\n")
 cat("📁 所有结果已保存到:", output_paths$kegg_analysis, "目录\n")
 cat("📊 此分析框架可自动适配任意数量的细胞类型 (2-50+ 种)\n")
+
+# ========== 向后兼容性支持 ==========
+cat("\n🔄 生成向后兼容的KEGG对象...\n")
+
+# 创建合并的KEGG结果对象，供旧脚本使用
+if (length(kegg_real_list) > 0 && length(kegg_gen_list) > 0) {
+    
+    # 选择通路数最多的细胞类型作为代表
+    real_pathway_counts <- sapply(kegg_real_list, function(x) nrow(x@result))
+    gen_pathway_counts <- sapply(kegg_gen_list, function(x) nrow(x@result))
+    
+    # 找到共同细胞类型中通路最丰富的
+    common_for_compat <- intersect(names(real_pathway_counts), names(gen_pathway_counts))
+    if (length(common_for_compat) > 0) {
+        combined_counts <- real_pathway_counts[common_for_compat] + gen_pathway_counts[common_for_compat]
+        best_celltype <- names(which.max(combined_counts))
+        
+        # 使用最佳细胞类型作为代表性结果
+        kegg_real <- kegg_real_list[[best_celltype]]
+        kegg_gen <- kegg_gen_list[[best_celltype]]
+        
+        cat("✅ 选择", best_celltype, "作为代表性KEGG结果\n")
+        cat("   - 真实数据通路数:", nrow(kegg_real@result), "\n")
+        cat("   - 生成数据通路数:", nrow(kegg_gen@result), "\n")
+        
+        # 保存向后兼容的RDS文件
+        saveRDS(kegg_real, get_output_path("kegg_analysis", "kegg_real_results.rds"))
+        saveRDS(kegg_gen, get_output_path("kegg_analysis", "kegg_generated_results.rds"))
+        
+        cat("💾 向后兼容的KEGG结果已保存:\n")
+        cat("  - ", get_output_path("kegg_analysis", "kegg_real_results.rds"), "\n")
+        cat("  - ", get_output_path("kegg_analysis", "kegg_generated_results.rds"), "\n")
+        
+    } else {
+        cat("⚠️  无法创建向后兼容对象：没有共同的细胞类型同时有KEGG结果\n")
+    }
+} else {
+    cat("⚠️  无法创建向后兼容对象：缺少KEGG分析结果\n")
+}
+
+cat("\n🎉 ========== 完整分析流程结束 ==========\n")
+cat("📋 分析类型:\n")
+cat("   🧬 多细胞类型分析: ", length(kegg_real_list), "种细胞类型的真实数据结果\n")
+cat("   🧬 多细胞类型分析: ", length(kegg_gen_list), "种细胞类型的生成数据结果\n")
+if (exists("kegg_real") && exists("kegg_gen")) {
+    cat("   🔄 向后兼容分析: 已创建单一KEGG对象\n")
+}
+cat("===============================================\n")

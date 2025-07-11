@@ -38,27 +38,39 @@ if (!file.exists(input_file)) {
 counts <- read.csv(input_file, row.names = 1)
 cat("✅ Raw matrix dimensions: ", dim(counts)[1], "genes ×", dim(counts)[2], "cells\n")
 
+# 检查数据格式：原始数据是细胞为行，基因为列，需要转置为基因为行，细胞为列
+cat("📊 原始数据维度:", dim(counts)[1], "行 ×", dim(counts)[2], "列\n")
+
+# 检查是否有label列需要移除
+if ("label" %in% colnames(counts)) {
+    cat("📋 移除label列\n")
+    labels <- counts$label
+    counts <- counts[, !colnames(counts) %in% "label"]
+} else {
+    labels <- rep("unknown", nrow(counts))
+}
+
 # Select first 100 cells for visualization/clustering
-if (ncol(counts) > 100) {
-    counts <- counts[, 1:100]
+if (nrow(counts) > 100) {
+    counts <- counts[1:100, ]
+    labels <- labels[1:100]
     cat("✅ 选择前100个细胞进行分析\n")
 }
 
-# 如果没有标签文件，创建一个简单的标签
-if (!file.exists("gen_label2.csv")) {
-    cat("⚠️  标签文件不存在，创建默认标签\n")
-    annotation <- data.frame(
-        cell_type = rep("unknown", ncol(counts)),
-        row.names = colnames(counts)
-    )
-    write.csv(annotation, "gen_label2.csv")
-} else {
-    annotation <- read.csv("gen_label2.csv", row.names = 1)
-}
+# 转置矩阵：SC3需要基因为行，细胞为列
+counts <- t(counts)
+cat("✅ 转置后矩阵维度:", dim(counts)[1], "基因 ×", dim(counts)[2], "细胞\n")
 
-# Transpose expression matrix (SC3 requires genes as rows, cells as columns)
-#counts <- t(counts)
-cat("✅ Transposed matrix dimensions:", dim(counts)[1], "cells ×", dim(counts)[2], "genes\n")
+# 创建细胞注释（现在细胞是列）
+annotation <- data.frame(
+    cell_type = labels,
+    row.names = colnames(counts)
+)
+
+# 保存注释文件
+annotation_file <- get_output_path("clustering", "cell_annotation.csv")
+write.csv(annotation, annotation_file)
+cat("✅ 细胞注释已保存到:", annotation_file, "\n")
 
 # ====================== Create SingleCellExperiment Object ======================
 # Input matrix must be normalized and log-transformed
