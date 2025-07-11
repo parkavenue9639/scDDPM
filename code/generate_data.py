@@ -104,7 +104,7 @@ def generate_for_class(model_path, csv_path, output_path, device, samples_per_ba
     balancer = CSVDataBalancer(csv_path)
     unique_labels = np.unique(balancer.df[balancer.label_col])
     label_to_num = {label: i for i, label in enumerate(unique_labels)}
-    label_groups = {label: balancer.df[balancer.label_col] == label for label in unique_labels}
+    label_groups = {label: balancer.df[balancer.df[balancer.label_col] == label].copy() for label in unique_labels}
     
     # Find the label index
     unique_labels = list(label_groups.keys())
@@ -115,7 +115,14 @@ def generate_for_class(model_path, csv_path, output_path, device, samples_per_ba
     cell_type_data = label_groups[label]
     
     print(f"   - 标签索引: {label_idx}")
-    
+    # 调试日志
+    print("[DEBUG] label:", label)
+    print("[DEBUG] unique_labels:", unique_labels)
+    print("[DEBUG] label_groups keys:", list(label_groups.keys()))
+    print("[DEBUG] cell_type_data shape:", getattr(cell_type_data, "shape", None))
+    print("[DEBUG] cell_type_data columns:", getattr(cell_type_data, "columns", None))
+    print("[DEBUG] cell_type_data head:\n", cell_type_data.head())
+
     with torch.no_grad():
         generated_list = []
         total_samples = samples_per_batch * num_batches
