@@ -112,23 +112,106 @@ init_logging() {
     echo "=== scDDPM 处理日志 - $(date) ===" > "$MAIN_LOG_FILE"
 }
 
-# 日志记录函数
+# 优化的日志记录函数 - 确保实时显示
 log_output() {
     if [ "$DISABLE_LOGGING" = false ] && [ -n "$MAIN_LOG_FILE" ]; then
-        tee -a "$MAIN_LOG_FILE"
+        # 使用unbuffer确保实时输出，如果没有unbuffer则使用stdbuf
+        if command -v unbuffer >/dev/null 2>&1; then
+            unbuffer tee -a "$MAIN_LOG_FILE"
+        elif command -v stdbuf >/dev/null 2>&1; then
+            stdbuf -o0 tee -a "$MAIN_LOG_FILE"
+        else
+            tee -a "$MAIN_LOG_FILE"
+        fi
     else
         cat
     fi
 }
 
-# 数据集专用日志记录函数
+# 数据集专用日志记录函数 - 双重日志记录
 log_dataset_output() {
     local dataset_name=$1
     if [ "$DISABLE_LOGGING" = false ] && [ -n "$LOG_DIR" ]; then
         local dataset_log="$LOG_DIR/dataset_${dataset_name}_${LOG_TIMESTAMP}.log"
-        tee -a "$dataset_log" | log_output
+        # 确保数据集日志目录存在
+        mkdir -p "$(dirname "$dataset_log")"
+        
+        # 使用更好的管道处理确保实时输出
+        if command -v unbuffer >/dev/null 2>&1; then
+            unbuffer tee -a "$dataset_log" | log_output
+        elif command -v stdbuf >/dev/null 2>&1; then
+            stdbuf -o0 tee -a "$dataset_log" | log_output
+        else
+            tee -a "$dataset_log" | log_output
+        fi
     else
         log_output
+    fi
+}
+
+# 专用于Python训练脚本的实时日志函数
+run_python_with_realtime_log() {
+    local script_name="$1"
+    local dataset_name="$2"
+    
+    echo "🚀 启动Python脚本: $script_name (实时输出+日志记录)"
+    
+    # 设置Python无缓冲输出
+    export PYTHONUNBUFFERED=1
+    
+    # 运行Python脚本并确保实时输出
+    if [ "$DISABLE_LOGGING" = false ] && [ -n "$LOG_DIR" ]; then
+        local training_log="$LOG_DIR/training_${dataset_name}_${LOG_TIMESTAMP}.log"
+        echo "📝 训练日志: $training_log"
+        
+        # 使用script命令确保实时输出（如果可用）
+        if command -v script >/dev/null 2>&1; then
+            # macOS/Linux script命令
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                script -F "$training_log" python "$script_name" 2>&1 | tee >(cat)
+            else
+                script -f -c "python $script_name" "$training_log" 2>&1 | tee >(cat)
+            fi
+        else
+            # 备用方案：使用stdbuf或unbuffer
+            if command -v stdbuf >/dev/null 2>&1; then
+                stdbuf -o0 -e0 python "$script_name" 2>&1 | stdbuf -o0 tee -a "$training_log"
+            elif command -v unbuffer >/dev/null 2>&1; then
+                unbuffer python "$script_name" 2>&1 | tee -a "$training_log"
+            else
+                python "$script_name" 2>&1 | tee -a "$training_log"
+            fi
+        fi
+    else
+        # 禁用日志时直接运行
+        python "$script_name"
+    fi
+}
+
+# 专用于R脚本的实时日志函数
+run_rscript_with_realtime_log() {
+    local script_name="$1"
+    local dataset_name="$2"
+    local module_name="$3"
+    
+    echo "🚀 启动R脚本: $script_name (实时输出+日志记录)"
+    
+    # 运行R脚本并确保实时输出
+    if [ "$DISABLE_LOGGING" = false ] && [ -n "$LOG_DIR" ]; then
+        local r_log="$LOG_DIR/r_${module_name}_${dataset_name}_${LOG_TIMESTAMP}.log"
+        echo "📝 R脚本日志: $r_log"
+        
+        # 使用实时输出工具运行R脚本
+        if command -v unbuffer >/dev/null 2>&1; then
+            unbuffer Rscript "$script_name" 2>&1 | tee -a "$r_log"
+        elif command -v stdbuf >/dev/null 2>&1; then
+            stdbuf -o0 -e0 Rscript "$script_name" 2>&1 | stdbuf -o0 tee -a "$r_log"
+        else
+            Rscript "$script_name" 2>&1 | tee -a "$r_log"
+        fi
+    else
+        # 禁用日志时直接运行
+        Rscript "$script_name"
     fi
 }
 
@@ -354,6 +437,21 @@ init_timing_system
 echo "================= scDDPM 完整自动化脚本 ================="
 echo "当前时间: $(date)"
 echo "工作目录: $(pwd)"
+
+# 检查实时输出工具状态
+echo ""
+echo "🔧 实时输出工具检查:"
+if command -v unbuffer >/dev/null 2>&1; then
+    echo "  ✅ unbuffer (expect) - 可用"
+elif command -v stdbuf >/dev/null 2>&1; then
+    echo "  ✅ stdbuf (coreutils) - 可用"
+elif command -v script >/dev/null 2>&1; then
+    echo "  ✅ script (系统自带) - 可用"
+else
+    echo "  ⚠️  无专用实时输出工具，使用基础tee"
+    echo "     建议安装: brew install expect (macOS) 或 apt install expect (Ubuntu)"
+fi
+echo ""
 echo "使用方法: $0 [选项]"
 echo ""
 echo "📊 数据集选项:"
@@ -378,6 +476,11 @@ echo ""
 echo "📝 日志记录选项:"
 echo "    --no-log                      禁用日志记录"
 echo "    --log-dir=DIR                 指定日志目录 (默认: logs)"
+echo ""
+echo "🚀 实时输出优化:"
+echo "    默认启用实时输出+日志记录，训练过程可实时查看"
+echo "    支持的实时输出工具: unbuffer, stdbuf, script (自动检测)"
+echo "    安装实时输出工具: brew install expect (macOS) 或 apt install expect (Ubuntu)"
 echo ""
 echo "💡 使用示例:"
 echo "    $0                             # 处理所有数据集"
@@ -589,7 +692,7 @@ else
     else
         echo "📊 预处理数据不存在，开始运行预处理..."
     fi
-    Rscript code/Preprocess.R
+    run_rscript_with_realtime_log "code/Preprocess.R" "$current_dataset" "preprocess"
     if [ ! -f "$preprocessed_file" ]; then
         echo "❌ 预处理输出文件不存在，流程中止！"
         exit 1
@@ -617,7 +720,7 @@ else
     else
         echo "🧠 最佳模型文件不存在，开始训练..."
     fi
-    python code/train_model.py
+    run_python_with_realtime_log "code/train_model.py" "$current_dataset"
     model_count=$(ls $model_pattern 2>/dev/null | wc -l)
     if [ $model_count -eq 0 ]; then
         echo "❌ 未生成最佳模型文件，流程中止！"
@@ -646,7 +749,7 @@ else
     else
         echo "🎨 生成数据不存在，开始运行generate_data.py..."
     fi
-    python code/generate_data.py
+    run_python_with_realtime_log "code/generate_data.py" "$current_dataset"
     if [ ! -f "$generated_file" ]; then
         echo "❌ 生成数据文件不存在，流程中止！"
         exit 1
@@ -763,10 +866,10 @@ if [ "$force_all_current" = true ] || [ "$force_kegg_current" = true ]; then
     fi
     
     echo "  - 运行基础KEGG分析..."
-    Rscript code/kegg.R
+    run_rscript_with_realtime_log "code/kegg.R" "$current_dataset" "kegg"
     
     echo "  - 运行详细KEGG比较分析..."
-    Rscript code/kegg_detailed_analysis.R
+    run_rscript_with_realtime_log "code/kegg_detailed_analysis.R" "$current_dataset" "kegg_detailed"
     
     echo "✅ KEGG富集分析完成（强制重新运行）"
     
@@ -783,7 +886,7 @@ elif [ -f "$kegg_real_file" ] && [ -f "$kegg_gen_file" ] && [ "$detailed_kegg_co
 elif [ -f "$kegg_real_file" ] && [ -f "$kegg_gen_file" ] && [ "$basic_kegg_complete" = true ]; then
     echo "✅ 基础KEGG分析已完成，运行详细分析..."
     echo "   - 从已保存的结果运行详细比较分析..."
-    Rscript code/kegg_detailed_analysis.R
+    run_rscript_with_realtime_log "code/kegg_detailed_analysis.R" "$current_dataset" "kegg_detailed"
     echo "✅ 详细KEGG分析完成"
     
 else
@@ -791,13 +894,13 @@ else
     
     # 检查KEGG结果状态
     echo "  - 检查KEGG分析状态..."
-    Rscript code/load_kegg_results.R
+    run_rscript_with_realtime_log "code/load_kegg_results.R" "$current_dataset" "kegg_status"
     
     echo "  - 运行基础KEGG分析..."
-    Rscript code/kegg.R
+    run_rscript_with_realtime_log "code/kegg.R" "$current_dataset" "kegg"
     
     echo "  - 运行详细KEGG比较分析..."
-    Rscript code/kegg_detailed_analysis.R
+    run_rscript_with_realtime_log "code/kegg_detailed_analysis.R" "$current_dataset" "kegg_detailed"
     
     # 验证分析结果
     if [ ! -f "$kegg_real_file" ] || [ ! -f "$kegg_gen_file" ]; then
@@ -860,10 +963,10 @@ if [ "$force_all_current" = true ] || [ "$force_pca_current" = true ]; then
     fi
     
     echo "  - 运行PCA可视化分析..."
-    Rscript code/Classification\ visualization.R
+    run_rscript_with_realtime_log "code/Classification visualization.R" "$current_dataset" "pca_viz"
     
     echo "  - 运行PCA质量评估..."
-    Rscript code/pca_quality_assessment.R
+    run_rscript_with_realtime_log "code/pca_quality_assessment.R" "$current_dataset" "pca_assessment"
     
     echo "✅ PCA质量评估完成（强制重新运行）"
     
@@ -880,17 +983,17 @@ elif [ -f "$pca_assessment_file" ] && [ "$basic_viz_complete" = true ]; then
 elif [ "$basic_viz_complete" = true ] && [ ! -f "$pca_assessment_file" ]; then
     echo "✅ PCA可视化已完成，运行质量评估..."
     echo "  - 运行PCA质量评估..."
-    Rscript code/pca_quality_assessment.R
+    run_rscript_with_realtime_log "code/pca_quality_assessment.R" "$current_dataset" "pca_assessment"
     echo "✅ PCA质量评估完成"
     
 else
     echo "📊 开始完整的PCA分析和质量评估流程..."
     
     echo "  - 运行PCA可视化分析..."
-    Rscript code/Classification\ visualization.R
+    run_rscript_with_realtime_log "code/Classification visualization.R" "$current_dataset" "pca_viz"
     
     echo "  - 运行PCA质量评估..."
-    Rscript code/pca_quality_assessment.R
+    run_rscript_with_realtime_log "code/pca_quality_assessment.R" "$current_dataset" "pca_assessment"
     
     # 验证评估结果
     if [ ! -f "$pca_assessment_file" ]; then
