@@ -132,13 +132,13 @@ cat(sprintf("  合并数据轮廓系数: %.3f %s\n", sil_all,
 cat("\n📏 分布相似性评估:\n")
 
 # 计算每个细胞类型的中心点
-cell_types <- unique(org_label)
+cell_types <- unique(as.character(org_label))
 real_centers <- matrix(0, nrow = length(cell_types), ncol = 2)
 gen_centers <- matrix(0, nrow = length(cell_types), ncol = 2)
 
 for (i in seq_along(cell_types)) {
-    real_idx <- which(org_label[1:ncol(counts_real)] == cell_types[i])
-    gen_idx <- which(gen_label[1:ncol(counts_gen)] == cell_types[i])
+    real_idx <- which(as.character(org_label[1:ncol(counts_real)]) == cell_types[i])
+    gen_idx <- which(as.character(gen_label[1:ncol(counts_gen)]) == cell_types[i])
     
     if (length(real_idx) > 0) {
         real_centers[i, ] <- colMeans(pca_data_real[real_idx, 1:2, drop = FALSE])

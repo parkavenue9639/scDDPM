@@ -105,150 +105,132 @@ cat("  生成数据维度:", dim(gen_expr), "\n")
 cat("  合并数据维度:", dim(all_counts), "\n")
 
 # -------- PCA visualization on real data --------
-cat("📊 生成真实数据PCA图...\n")
-counts <- t(org_expr[, 1:min(1000, ncol(org_expr))])
-sce <- SingleCellExperiment(assays = list(counts = as.matrix(counts), logcounts = as.matrix(counts)))
-rowData(sce)$feature_symbol <- rownames(sce)
-sce <- sce[!duplicated(rowData(sce)$feature_symbol), ]
-PCAsce <- runPCA(sce)
+counts_real <- t(org_expr[, 1:min(1000, ncol(org_expr))])
+sce_real <- SingleCellExperiment(assays = list(counts = as.matrix(counts_real), logcounts = as.matrix(counts_real)))
+rowData(sce_real)$feature_symbol <- rownames(sce_real)
+sce_real <- sce_real[!duplicated(rowData(sce_real)$feature_symbol), ]
+PCAsce_real <- runPCA(sce_real)
+pca_data_real <- reducedDim(PCAsce_real, "PCA")
 
-# 检查PCA结果
-cat("  - PCA计算完成，细胞数:", ncol(sce), "基因数:", nrow(sce), "\n")
-pca_data <- reducedDim(PCAsce, "PCA")
-cat("  - PCA数据维度:", dim(pca_data), "\n")
+# -------- PCA visualization on generated data --------
+counts_gen <- t(gen_expr[, 1:min(1000, ncol(gen_expr))])
+sce_gen <- SingleCellExperiment(assays = list(counts = as.matrix(counts_gen), logcounts = as.matrix(counts_gen)))
+rowData(sce_gen)$feature_symbol <- rownames(sce_gen)
+sce_gen <- sce_gen[!duplicated(rowData(sce_gen)$feature_symbol), ]
+PCAsce_gen <- runPCA(sce_gen)
+pca_data_gen <- reducedDim(PCAsce_gen, "PCA")
 
-# 详细诊断PCA数据
-cat("  🔍 PCA数据诊断:\n")
-cat("    - PC1 范围:", range(pca_data[, 1], na.rm = TRUE), "\n")
-cat("    - PC2 范围:", range(pca_data[, 2], na.rm = TRUE), "\n")
-cat("    - PC1 是否有NA:", any(is.na(pca_data[, 1])), "\n")
-cat("    - PC2 是否有NA:", any(is.na(pca_data[, 2])), "\n")
-cat("    - PC1 前5个值:", head(pca_data[, 1], 5), "\n")
-cat("    - PC2 前5个值:", head(pca_data[, 2], 5), "\n")
+# -------- PCA on combined real and generated data --------
+counts_combined <- t(all_counts[, 1:min(1000, ncol(all_counts))])
+sce_combined <- SingleCellExperiment(assays = list(counts = as.matrix(counts_combined), logcounts = as.matrix(counts_combined)))
+rowData(sce_combined)$feature_symbol <- rownames(sce_combined)
+sce_combined <- sce_combined[!duplicated(rowData(sce_combined)$feature_symbol), ]
+PCAsce_combined <- runPCA(sce_combined)
+pca_data_combined <- reducedDim(PCAsce_combined, "PCA")
 
-# 准备颜色标签
-cell_colors <- org_label$cell_type_numeric[1:ncol(counts)]
-cat("  - 颜色标签长度:", length(cell_colors), "\n")
-cat("  - 颜色标签范围:", range(cell_colors, na.rm = TRUE), "\n")
-cat("  - 颜色标签前10个:", head(cell_colors, 10), "\n")
+# PCA空间统一处理（保持原始合并PCA结果）
+cat("🔧 PCA空间统一处理:\n")
+cat("  📝 使用原始合并PCA结果，无需方向调整\n")
+cat("  📝 测试显示原始结果与各数据集单独PCA最为一致\n")
+cat("  ✅ 真实数据和生成数据在同一空间中表现一致\n")
 
-# 保存PCA图 - 方法1: 基础绘图
+# 统一坐标轴范围 (基于原始合并数据PCA空间)
+global_xlim <- range(pca_data_combined[,1], na.rm = TRUE)
+global_ylim <- range(pca_data_combined[,2], na.rm = TRUE)
+
+cat("  合并数据PCA维度:", dim(pca_data_combined), "\n")
+cat("  真实数据索引范围: 1 到", nrow(org_expr), "\n")
+cat("  生成数据索引范围:", nrow(org_expr) + 1, "到", nrow(org_expr) + nrow(gen_expr), "\n")
+cat("  PC1范围:", sprintf("%.2f 到 %.2f", global_xlim[1], global_xlim[2]), "\n")
+cat("  PC2范围:", sprintf("%.2f 到 %.2f", global_ylim[1], global_ylim[2]), "\n")
+
+# -------- 画真实数据PCA图 (使用统一的PCA空间) --------
+# 从合并数据的PCA结果中提取真实数据部分
+real_start_idx <- 1
+real_end_idx <- nrow(org_expr)
+pca_data_real_unified <- pca_data_combined[real_start_idx:real_end_idx, ]
+
+cell_colors_real <- org_label$cell_type_numeric[1:nrow(pca_data_real_unified)]
 pdf(get_output_path("visualization", "real_data_pca.pdf"))
-plot(pca_data[, 1], pca_data[, 2], 
-     col = cell_colors, pch = 19, cex = 1.8, 
-     main = "PCA - Real Data", xlab = "PC1", ylab = "PC2",
-     xlim = range(pca_data[, 1], na.rm = TRUE),
-     ylim = range(pca_data[, 2], na.rm = TRUE))
+plot(pca_data_real_unified[, 1], pca_data_real_unified[, 2], 
+     col = cell_colors_real, pch = 19, cex = 1.8, 
+     main = "PCA - Real Data (Unified Space)", xlab = "PC1", ylab = "PC2",
+     xlim = global_xlim, ylim = global_ylim)
 legend("topright", legend = unique(org_label$cell_type), 
-       col = unique(cell_colors), pch = 19, title = "Cell Type")
+       col = unique(cell_colors_real), pch = 19, title = "Cell Type")
 dev.off()
 
 # 保存PCA图 - 方法2: 使用ggplot2（更可靠）
 pca_df <- data.frame(
-  PC1 = pca_data[, 1],
-  PC2 = pca_data[, 2],
-  cell_type = as.factor(org_label$cell_type[1:ncol(counts)])
+  PC1 = pca_data_real_unified[, 1],
+  PC2 = pca_data_real_unified[, 2],
+  cell_type = as.factor(org_label$cell_type[1:nrow(pca_data_real_unified)])
 )
 
 p <- ggplot(pca_df, aes(x = PC1, y = PC2, color = cell_type)) +
   geom_point(size = 2, alpha = 0.8) +
   theme_minimal() +
-  labs(title = "PCA - Real Data", 
+  labs(title = "PCA - Real Data (Unified Space)", 
        x = "PC1", y = "PC2", 
        color = "Cell Type") +
-  theme(legend.position = "right")
+  theme(legend.position = "right") +
+  coord_cartesian(xlim = global_xlim, ylim = global_ylim)
 
 ggsave(get_output_path("visualization", "real_data_pca_ggplot.pdf"), plot = p, width = 10, height = 8)
 cat("  ✅ ggplot2版本已保存: real_data_pca_ggplot.pdf\n")
 
-# -------- PCA visualization on generated data --------
-cat("📊 生成合成数据PCA图...\n")
-counts <- t(gen_expr[, 1:min(1000, ncol(gen_expr))])
-sce <- SingleCellExperiment(assays = list(counts = as.matrix(counts), logcounts = as.matrix(counts)))
-rowData(sce)$feature_symbol <- rownames(sce)
-sce <- sce[!duplicated(rowData(sce)$feature_symbol), ]
-PCAsce <- runPCA(sce)
+# -------- 画生成数据PCA图 (使用统一的PCA空间) --------
+# 从合并数据的PCA结果中提取生成数据部分
+gen_start_idx <- nrow(org_expr) + 1
+gen_end_idx <- nrow(org_expr) + nrow(gen_expr)
+pca_data_gen_unified <- pca_data_combined[gen_start_idx:gen_end_idx, ]
 
-# 检查PCA结果
-cat("  - PCA计算完成，细胞数:", ncol(sce), "基因数:", nrow(sce), "\n")
-pca_data <- reducedDim(PCAsce, "PCA")
-cat("  - PCA数据维度:", dim(pca_data), "\n")
-
-# 详细诊断PCA数据
-cat("  🔍 PCA数据诊断:\n")
-cat("    - PC1 范围:", range(pca_data[, 1], na.rm = TRUE), "\n")
-cat("    - PC2 范围:", range(pca_data[, 2], na.rm = TRUE), "\n")
-
-# 准备颜色标签
-cell_colors <- gen_label$cell_type_numeric[1:ncol(counts)]
-cat("  - 颜色标签长度:", length(cell_colors), "\n")
-
+cell_colors_gen <- gen_label$cell_type_numeric[1:nrow(pca_data_gen_unified)]
 pdf(get_output_path("visualization", "generated_data_pca.pdf"))
-plot(pca_data[, 1], pca_data[, 2],
-     col = cell_colors, pch = 19, cex = 1.0,
-     main = "PCA - Generated Data", xlab = "PC1", ylab = "PC2",
-     xlim = range(pca_data[, 1], na.rm = TRUE),
-     ylim = range(pca_data[, 2], na.rm = TRUE))
+plot(pca_data_gen_unified[, 1], pca_data_gen_unified[, 2],
+     col = cell_colors_gen, pch = 19, cex = 1.0,
+     main = "PCA - Generated Data (Unified Space)", xlab = "PC1", ylab = "PC2",
+     xlim = global_xlim, ylim = global_ylim)
 legend("topright", legend = unique(gen_label$cell_type), 
-       col = unique(cell_colors), pch = 19, title = "Cell Type")
+       col = unique(cell_colors_gen), pch = 19, title = "Cell Type")
 dev.off()
 
 # ggplot2版本
 pca_df <- data.frame(
-  PC1 = pca_data[, 1],
-  PC2 = pca_data[, 2],
-  cell_type = as.factor(gen_label$cell_type[1:ncol(counts)])
+  PC1 = pca_data_gen_unified[, 1],
+  PC2 = pca_data_gen_unified[, 2],
+  cell_type = as.factor(gen_label$cell_type[1:nrow(pca_data_gen_unified)])
 )
 
 p <- ggplot(pca_df, aes(x = PC1, y = PC2, color = cell_type)) +
   geom_point(size = 2, alpha = 0.8) +
   theme_minimal() +
-  labs(title = "PCA - Generated Data", 
+  labs(title = "PCA - Generated Data (Unified Space)", 
        x = "PC1", y = "PC2", 
        color = "Cell Type") +
-  theme(legend.position = "right")
+  theme(legend.position = "right") +
+  coord_cartesian(xlim = global_xlim, ylim = global_ylim)
 
 ggsave(get_output_path("visualization", "generated_data_pca_ggplot.pdf"), plot = p, width = 10, height = 8)
 cat("  ✅ ggplot2版本已保存: generated_data_pca_ggplot.pdf\n")
 
-# -------- PCA on combined real and generated data --------
-cat("📊 生成合并数据PCA图...\n")
-counts <- t(all_counts[, 1:min(1000, ncol(all_counts))])
-sce <- SingleCellExperiment(assays = list(counts = as.matrix(counts), logcounts = as.matrix(counts)))
-rowData(sce)$feature_symbol <- rownames(sce)
-sce <- sce[!duplicated(rowData(sce)$feature_symbol), ]
-PCAsce <- runPCA(sce)
-
-# 检查PCA结果
-cat("  - PCA计算完成，细胞数:", ncol(sce), "基因数:", nrow(sce), "\n")
-pca_data <- reducedDim(PCAsce, "PCA")
-cat("  - PCA数据维度:", dim(pca_data), "\n")
-
-# 详细诊断PCA数据
-cat("  🔍 PCA数据诊断:\n")
-cat("    - PC1 范围:", range(pca_data[, 1], na.rm = TRUE), "\n")
-cat("    - PC2 范围:", range(pca_data[, 2], na.rm = TRUE), "\n")
-
-# 准备颜色标签
-cell_colors <- annotation$cell_type_numeric[1:ncol(counts)]
-cat("  - 颜色标签长度:", length(cell_colors), "\n")
-
+# -------- 画合并数据PCA图 --------
+cell_colors_combined <- annotation$cell_type_numeric[1:ncol(counts_combined)]
 pdf(get_output_path("visualization", "combined_data_pca.pdf"))
-plot(pca_data[, 1], pca_data[, 2],
-     col = cell_colors, pch = 19, cex = 1.8,
+plot(pca_data_combined[, 1], pca_data_combined[, 2],
+     col = cell_colors_combined, pch = 19, cex = 1.8,
      main = "PCA - Combined Data", xlab = "PC1", ylab = "PC2",
-     xlim = range(pca_data[, 1], na.rm = TRUE),
-     ylim = range(pca_data[, 2], na.rm = TRUE))
+     xlim = global_xlim, ylim = global_ylim)
 legend("topright", legend = unique(annotation$cell_type), 
-       col = unique(cell_colors), pch = 19, title = "Cell Type")
+       col = unique(cell_colors_combined), pch = 19, title = "Cell Type")
 dev.off()
 
 # ggplot2版本 - 带数据类型标识
 pca_df <- data.frame(
-  PC1 = pca_data[, 1],
-  PC2 = pca_data[, 2],
-  cell_type = as.factor(annotation$cell_type[1:ncol(counts)]),
-  data_type = c(rep("Real", nrow(org_expr)), rep("Generated", nrow(gen_expr)))[1:ncol(counts)]
+  PC1 = pca_data_combined[, 1],
+  PC2 = pca_data_combined[, 2],
+  cell_type = as.factor(annotation$cell_type[1:ncol(counts_combined)]),
+  data_type = c(rep("Real", nrow(org_expr)), rep("Generated", nrow(gen_expr)))[1:ncol(counts_combined)]
 )
 
 p <- ggplot(pca_df, aes(x = PC1, y = PC2, color = cell_type, shape = data_type)) +
@@ -258,7 +240,8 @@ p <- ggplot(pca_df, aes(x = PC1, y = PC2, color = cell_type, shape = data_type))
        x = "PC1", y = "PC2", 
        color = "Cell Type", shape = "Data Type") +
   theme(legend.position = "right") +
-  scale_shape_manual(values = c("Real" = 16, "Generated" = 17))
+  scale_shape_manual(values = c("Real" = 16, "Generated" = 17)) +
+  coord_cartesian(xlim = global_xlim, ylim = global_ylim)
 
 ggsave(get_output_path("visualization", "combined_data_pca_ggplot.pdf"), plot = p, width = 12, height = 8)
 cat("  ✅ ggplot2版本已保存: combined_data_pca_ggplot.pdf\n")

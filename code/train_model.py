@@ -271,10 +271,7 @@ def train_model(model, diffusion, dataloader, device, epochs=100):
 
 
 # --------------------- Main Training Function ---------------------
-def main():
-    print("🚀 启动 scDDPM 模型训练...")
-    print("=" * 60)
-    
+def main(): 
     # 设备检测
     if torch.cuda.is_available():
         device = torch.device("cuda")
@@ -367,7 +364,7 @@ def main():
             
             optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
             model.train()
-            epochs = 100
+            epochs = 100 if dataset_name == "AD01103" else 200
             
             print(f"🚀 开始训练模型...")
             print(f"   - 设备: {device}")
